@@ -170,9 +170,8 @@ function plot_model_parameters(model)
     end
 end
 
-function main()
+function main(input_model_file)
     input_file_name = "input.toml"
-    input_model_file = "model-pre-trained.bson"
 
     input_model = readModel(input_model_file)
     inputNN, outputNN = readInputFile(input_file_name)
