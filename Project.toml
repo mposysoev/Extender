@@ -1,0 +1,4 @@
+name = "NN_Extender"
+uuid = "8cbadbc2-0e65-4115-bc84-1c4d3ab60673"
+authors = ["Maksim Posysoev <maxim.posysoev@gmail.com>"]
+version = "0.1.0"

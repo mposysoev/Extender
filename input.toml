@@ -1,0 +1,11 @@
+# Input file for NN Extender
+# input.structure -- structure of your neural network BEFORE extending
+# output.structure -- structure of your neural network AFTER extending
+
+[input]
+structure = [10, 40, 30, 20, 1]
+activations = ["identity", "relu", "relu", "identity"]
+
+[output]
+structure = [12, 50, 40, 30, 1]
+activations = ["identity", "relu", "relu", "identity"]
