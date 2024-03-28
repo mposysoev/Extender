@@ -160,13 +160,87 @@ function plot_model_parameters(model)
                 if ndims(p) == 2
                     p_plot = heatmap(Array(p), title="Weights")
                     display(p_plot)
-                # For biases or any 1D parameter, we convert them into a 2D array for the heatmap
+                    # For biases or any 1D parameter, we convert them into a 2D array for the heatmap
                 elseif ndims(p) == 1
                     p_plot = heatmap(reshape(Array(p), 1, length(p)), title="Biases")
                     display(p_plot)
                 end
             end
         end
+    end
+end
+
+function setLastLayerOnes(output_model)
+    copy_matrix_into!(output_model[end].weight, ones(size(output_model[end].weight)), 1, 1)
+    return output_model
+end
+
+function test(input_model, output_model, inputParams::NNparams, outputParams::NNparams)
+    mul = 1
+    n1 = inputParams.structure[1]
+    n2 = outputParams.structure[1]
+
+    for i in 1:1000
+        input_vector1 = rand(n1) .* mul
+        v_2 = rand(n2 - n1) .* mul
+        input_vector2 = vcat(input_vector1, v_2)
+        result1 = input_model(input_vector1)
+        result2 = output_model(input_vector2)
+        if abs(result1[1] - result2[1]) > 0.00001
+            println("❌ Failed test!")
+            println("Input model result: $(result1[1])")
+            println("Output model result: $(result2[1])")
+            println("Difference: $(abs(result1[1] - result2[1]))")
+        end
+        mul *= -1
+    end
+end
+
+function checkLayersSizes(inputNN::NNparams, outputNN::NNparams)
+    if length(inputNN.structure) > length(outputNN.structure)
+        println("Number of layers in input NN couldn't be bigger that in output")
+        error("Check amount of layers")
+    end
+
+    if length(inputNN.activations) > length(outputNN.activations)
+        println("Number of layers in input NN couldn't be bigger that in output")
+        error("Check amount of layers")
+    end
+
+    if (length(inputNN.activations) + 1) != length(inputNN.structure)
+        println("$(length(inputNN.activations)) + 1 != $(length(inputNN.structure))")
+        error("The length of input arrays for structure and activations doesn't match")
+    end
+
+    if (length(outputNN.activations) + 1) != length(outputNN.structure)
+        println("$(length(outputNN.activations)) + 1 != $(length(outputNN.structure))")
+        error("The length of output arrays for structure and activations doesn't match")
+    end
+
+
+    for i in 1:length(inputNN.structure)
+        if inputNN.structure[i] > outputNN.structure[i]
+            println("input: $(inputNN.structure[i]) > output: $(outputNN.structure[i]) in layer number $i.")
+            error("Layers in new neural net should be bigger or the same at least")
+        end
+    end
+
+    for i in 1:(length(inputNN.structure)-1)
+        if outputNN.activations[i] != inputNN.activations[i]
+            println("$(inputNN.activations[i]) != $(outputNN.activations[i]) in layer number $i")
+            error("Activation functions should be the same for corresponding layers for compatibility")
+        end
+    end
+
+    for i in (length(inputNN.structure)-1):(length(outputNN.structure)-1)
+        if outputNN.activations[i] != "identity"
+            println("$(outputNN.activations[i]) should be identity")
+            error("All additional layers should have IDENTITY activation function for compatibility")
+        end
+    end
+
+    if inputNN.structure[end] != outputNN.structure[end]
+        println("WARNING: the sizes of the last layer should be the same. (or not)")
     end
 end
 
@@ -177,20 +251,27 @@ function main(input_model_file)
     inputNN, outputNN = readInputFile(input_file_name)
 
     checkMathModelAndInput(inputNN, input_file_name, input_model_file, input_model)
-    checkStructures(inputNN, outputNN)
-    # TODO: check if output bigger
-    # check len of neurons should be +1 of activations length
-
     helloMessage(inputNN, outputNN)
+
+    checkLayersSizes(inputNN, outputNN)
 
     output_model = initOutputModel(outputNN)
     setParamsToZero!(output_model)
-
     output_model = copyNNWeigths(input_model, output_model)
 
+    if length(inputNN.activations) < length(outputNN.activations)
+        last_n = inputNN.structure[end]
+        println("Adding additional layers")
+        for i in (length(inputNN.activations)+1):length(outputNN.activations)
+            sizes = size(output_model[i].weight)
+            ones_for_last_layer = ones(sizes)
+            ones_for_last_layer[(last_n+1):end] .= 0
+            copy_matrix_into!(output_model[i].weight, ones_for_last_layer, 1, 1)
+        end
+    end
+
+    test(input_model, output_model, inputNN, outputNN)
+
     @save "output_model.bson" output_model
-    println(output_model)
-
 end
-
 end # module NN_Extender
