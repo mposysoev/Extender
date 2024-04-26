@@ -120,10 +120,11 @@ function initOutputModel(outputNN::NNparams)
 
     layers = []
     for i in 1:length(activations)
-        push!(layers, Dense(structure[i], structure[i+1], getfield(Main, Symbol(activations[i]))))
+        push!(layers, Dense(structure[i], structure[i+1], getfield(Main, Symbol(activations[i])), bias=false))
     end
 
     model = Chain(layers...)
+    model = fmap(f64, model)
     return model
 end
 
@@ -144,7 +145,7 @@ end
 function copyNNWeigths(input_model, output_model)
     for (id, layer) in enumerate(input_model)
         copy_matrix_into!(output_model[id].weight, layer.weight, 1, 1)
-        copy_matrix_into!(output_model[id].bias, layer.bias, 1, 1)
+        # copy_matrix_into!(output_model[id].bias, layer.bias, 1, 1)
     end
 
     return output_model
