@@ -7,27 +7,39 @@ using Flux
 using Plots
 
 struct NNparams
+    file_name::String
     structure::Vector{Int64}
     activations::Vector{String}
+    bias::Bool
+    f64::Bool
 end
 
-function readModel(filename)
-    @load filename model
+function readModel(inputNN::NNparams)
+    @load inputNN.file_name model
     return model
 end
 
-function readInputFile(filename="input.toml")
+function readInputFile(filename = "input.toml")
     settings = TOML.parsefile(filename)
+    input_settings = settings["input"]
+    output_settings = settings["output"]
 
-    input_structure = settings["input"]["structure"]
-    input_activations = settings["input"]["activations"]
-    output_structure = settings["output"]["structure"]
-    output_activations = settings["output"]["activations"]
+    input_nn_params = NNparams(
+        input_settings["file_name"],
+        input_settings["structure"],
+        input_settings["activations"],
+        input_settings["bias"],
+        input_settings["f64"],
+    )
+    output_nn_params = NNparams(
+        output_settings["file_name"],
+        output_settings["structure"],
+        output_settings["activations"],
+        output_settings["bias"],
+        output_settings["f64"],
+    )
 
-    input_nn_params = NNparams(input_structure, input_activations)
-    output_nn_params = NNparams(output_structure, output_activations)
-
-    return (input_nn_params, output_nn_params)
+    return input_nn_params, output_nn_params
 end
 
 function getNNStructureVec(model)
@@ -90,25 +102,26 @@ function helloMessage(input::NNparams, output::NNparams)
                                 Extender
 ///////////////////////////////////////////////////////////////////////////////
     """)
-    println("Network would be changed from:")
-    println("$(input.activations)")
-    println("$(input.structure)")
+    println("Neural Network would be changed from:")
+    println("File: $(input.file_name)")
+    println("Activations: $(input.activations)")
+    println("Structure: $(input.structure)")
+    println("Bias: $(input.bias)")
+    println("Float64: $(input.f64)")
     println("To:")
-    println("$(output.activations)")
-    println("$(output.structure)")
+    println("Saved to file: $(output.file_name)")
+    println("Activations: $(output.activations)")
+    println("Structure: $(output.structure)")
+    println("Bias: $(output.bias)")
+    println("Float64: $(output.f64)")
 end
 
-function checkMathModelAndInput(
-    inputNN::NNparams,
-    input_file_name,
-    input_model_file,
-    input_model,
-)
+function checkMathModelAndInput(inputNN::NNparams, input_file_name, input_model)
     input_structure = getNNStructureVec(input_model)
     if inputNN.structure != input_structure
         println("WARNING:")
         println("Something wrong with structures.")
-        println("Structure the actual model $(input_model_file) -> $(input_structure)")
+        println("Structure the actual model $(inputNN.file_name) -> $(input_structure)")
         println("Doesn't match with structure $(inputNN.structure) from $(input_file_name)")
         error("Abort!")
     end
@@ -119,33 +132,50 @@ function initOutputModel(outputNN::NNparams)
     activations = outputNN.activations
 
     layers = []
-    for i in 1:length(activations)
-        push!(layers, Dense(structure[i], structure[i+1], getfield(Main, Symbol(activations[i])), bias=false))
+    for i = 1:length(activations)
+        push!(
+            layers,
+            Dense(
+                structure[i],
+                structure[i+1],
+                getfield(Main, Symbol(activations[i])),
+                bias = outputNN.bias,
+            ),
+        )
     end
 
     model = Chain(layers...)
-    model = fmap(f64, model)
+
+    if outputNN.f64
+        model = fmap(f64, model)
+    end
+
     return model
 end
 
 function copy_matrix_into!(dest, src, start_row::Int, start_col::Int)
     # Check if the source matrix can fit into the destination matrix at the specified position
-    if start_row + size(src, 1) - 1 > size(dest, 1) || start_col + size(src, 2) - 1 > size(dest, 2)
-        error("Source matrix does not fit into the destination matrix at the specified start position.")
+    if start_row + size(src, 1) - 1 > size(dest, 1) ||
+       start_col + size(src, 2) - 1 > size(dest, 2)
+        error(
+            "Source matrix does not fit into the destination matrix at the specified start position.",
+        )
     end
 
     # Copy values from source to destination
-    for i in 1:size(src, 1)
-        for j in 1:size(src, 2)
+    for i = 1:size(src, 1)
+        for j = 1:size(src, 2)
             dest[start_row+i-1, start_col+j-1] = src[i, j]
         end
     end
 end
 
-function copyNNWeigths(input_model, output_model)
+function copyNNWeigths(input_model, output_model, inputNN)
     for (id, layer) in enumerate(input_model)
         copy_matrix_into!(output_model[id].weight, layer.weight, 1, 1)
-        # copy_matrix_into!(output_model[id].bias, layer.bias, 1, 1)
+        if inputNN.bias
+            copy_matrix_into!(output_model[id].bias, layer.bias, 1, 1)
+        end
     end
 
     return output_model
@@ -157,13 +187,30 @@ function plot_model_parameters(model)
         if hasmethod(Flux.params, Tuple{typeof(layer)})
             layer_params = Flux.params(layer)
             for p in layer_params
+                # Using built-in color gradient :bluesreds for 0 values as white
+                cgrad = :bluesreds
                 # Assuming the parameter is a 2D array (for weights)
                 if ndims(p) == 2
-                    p_plot = heatmap(Array(p), title="Weights")
+                    x_ticks = 1:size(p, 2)
+                    y_ticks = 1:size(p, 1)
+                    p_plot = heatmap(
+                        Array(p),
+                        title = "Weights",
+                        xticks = (x_ticks, string.(x_ticks)),
+                        yticks = (y_ticks, string.(y_ticks)),
+                        c = cgrad,
+                    )
                     display(p_plot)
                     # For biases or any 1D parameter, we convert them into a 2D array for the heatmap
                 elseif ndims(p) == 1
-                    p_plot = heatmap(reshape(Array(p), 1, length(p)), title="Biases")
+                    x_ticks = 1:length(p)
+                    p_plot = heatmap(
+                        reshape(Array(p), 1, length(p)),
+                        title = "Biases",
+                        xticks = (x_ticks, string.(x_ticks)),
+                        yticks = (1, "1"),
+                        c = cgrad,
+                    )
                     display(p_plot)
                 end
             end
@@ -181,7 +228,7 @@ function test(input_model, output_model, inputParams::NNparams, outputParams::NN
     n1 = inputParams.structure[1]
     n2 = outputParams.structure[1]
 
-    for i in 1:1000
+    for i = 1:1000
         input_vector1 = rand(n1) .* mul
         v_2 = rand(n2 - n1) .* mul
         input_vector2 = vcat(input_vector1, v_2)
@@ -219,24 +266,32 @@ function checkLayersSizes(inputNN::NNparams, outputNN::NNparams)
     end
 
 
-    for i in 1:length(inputNN.structure)
+    for i = 1:length(inputNN.structure)
         if inputNN.structure[i] > outputNN.structure[i]
-            println("input: $(inputNN.structure[i]) > output: $(outputNN.structure[i]) in layer number $i.")
+            println(
+                "input: $(inputNN.structure[i]) > output: $(outputNN.structure[i]) in layer number $i.",
+            )
             error("Layers in new neural net should be bigger or the same at least")
         end
     end
 
-    for i in 1:(length(inputNN.structure)-1)
+    for i = 1:(length(inputNN.structure)-1)
         if outputNN.activations[i] != inputNN.activations[i]
-            println("$(inputNN.activations[i]) != $(outputNN.activations[i]) in layer number $i")
-            error("Activation functions should be the same for corresponding layers for compatibility")
+            println(
+                "$(inputNN.activations[i]) != $(outputNN.activations[i]) in layer number $i",
+            )
+            error(
+                "Activation functions should be the same for corresponding layers for compatibility",
+            )
         end
     end
 
-    for i in (length(inputNN.structure)-1):(length(outputNN.structure)-1)
+    for i = (length(inputNN.structure)-1):(length(outputNN.structure)-1)
         if outputNN.activations[i] != "identity"
             println("$(outputNN.activations[i]) should be identity")
-            error("All additional layers should have IDENTITY activation function for compatibility")
+            error(
+                "All additional layers should have IDENTITY activation function for compatibility",
+            )
         end
     end
 
@@ -245,25 +300,30 @@ function checkLayersSizes(inputNN::NNparams, outputNN::NNparams)
     end
 end
 
-function main(input_model_file)
-    input_file_name = "input.toml"
+function main()
+    if length(ARGS) == 0
+        input_file_name = "input.toml"
+    else
+        input_file_name = ARGS[1]
+    end
 
-    input_model = readModel(input_model_file)
+
     inputNN, outputNN = readInputFile(input_file_name)
+    input_model = readModel(inputNN)
 
-    checkMathModelAndInput(inputNN, input_file_name, input_model_file, input_model)
+    checkMathModelAndInput(inputNN, input_file_name, input_model)
     helloMessage(inputNN, outputNN)
 
     checkLayersSizes(inputNN, outputNN)
 
     output_model = initOutputModel(outputNN)
     setParamsToZero!(output_model)
-    output_model = copyNNWeigths(input_model, output_model)
+    output_model = copyNNWeigths(input_model, output_model, inputNN)
 
     if length(inputNN.activations) < length(outputNN.activations)
         last_n = inputNN.structure[end]
         println("Adding additional layers")
-        for i in (length(inputNN.activations)+1):length(outputNN.activations)
+        for i = (length(inputNN.activations)+1):length(outputNN.activations)
             sizes = size(output_model[i].weight)
             ones_for_last_layer = ones(sizes)
             ones_for_last_layer[(last_n+1):end] .= 0
@@ -273,6 +333,8 @@ function main(input_model_file)
 
     test(input_model, output_model, inputNN, outputNN)
 
-    @save "output_model.bson" output_model
+    model = nothing
+    model = output_model
+    @save outputNN.file_name model
 end
 end # module NN_Extender
