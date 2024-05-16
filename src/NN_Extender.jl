@@ -19,7 +19,7 @@ function readModel(inputNN::NNparams)
     return model
 end
 
-function readInputFile(filename = "input.toml")
+function readInputFile(filename="input.toml")
     settings = TOML.parsefile(filename)
     input_settings = settings["input"]
     output_settings = settings["output"]
@@ -139,7 +139,7 @@ function initOutputModel(outputNN::NNparams)
                 structure[i],
                 structure[i+1],
                 getfield(Main, Symbol(activations[i])),
-                bias = outputNN.bias,
+                bias=outputNN.bias,
             ),
         )
     end
@@ -187,18 +187,21 @@ function plot_model_parameters(model)
         if hasmethod(Flux.params, Tuple{typeof(layer)})
             layer_params = Flux.params(layer)
             for p in layer_params
-                # Using built-in color gradient :bluesreds for 0 values as white
-                cgrad = :bluesreds
+                # Define a custom color gradient with white at 0
+                color_gradient = cgrad([:blue, :white, :red], [0.0, 0.5, 1.0], rev=false)
+                # Set color limits to ensure 0 is always white
+                color_limits = (-1.0, 1.0)
                 # Assuming the parameter is a 2D array (for weights)
                 if ndims(p) == 2
                     x_ticks = 1:size(p, 2)
                     y_ticks = 1:size(p, 1)
                     p_plot = heatmap(
                         Array(p),
-                        title = "Weights",
-                        xticks = (x_ticks, string.(x_ticks)),
-                        yticks = (y_ticks, string.(y_ticks)),
-                        c = cgrad,
+                        title="Weights",
+                        xticks=(x_ticks, string.(x_ticks)),
+                        yticks=(y_ticks, string.(y_ticks)),
+                        c=color_gradient,
+                        clims=color_limits
                     )
                     display(p_plot)
                     # For biases or any 1D parameter, we convert them into a 2D array for the heatmap
@@ -206,10 +209,11 @@ function plot_model_parameters(model)
                     x_ticks = 1:length(p)
                     p_plot = heatmap(
                         reshape(Array(p), 1, length(p)),
-                        title = "Biases",
-                        xticks = (x_ticks, string.(x_ticks)),
-                        yticks = (1, "1"),
-                        c = cgrad,
+                        title="Biases",
+                        xticks=(x_ticks, string.(x_ticks)),
+                        yticks=(1, "1"),
+                        c=color_gradient,
+                        clims=color_limits
                     )
                     display(p_plot)
                 end
@@ -217,6 +221,8 @@ function plot_model_parameters(model)
         end
     end
 end
+
+
 
 function setLastLayerOnes(output_model)
     copy_matrix_into!(output_model[end].weight, ones(size(output_model[end].weight)), 1, 1)
