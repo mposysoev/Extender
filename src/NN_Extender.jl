@@ -14,6 +14,10 @@ struct NNparams
     f64::Bool
 end
 
+struct GeneralParams
+    set_zero_as::Float64
+end
+
 function readModel(inputNN::NNparams)
     @load inputNN.file_name model
     return model
@@ -53,9 +57,9 @@ function getNNStructureVec(model)
     return structure
 end
 
-function setParamsToZero!(model)
+function setParamsToZero!(model, eps)
     for p in Flux.params(model)
-        p .= 0.0  # Broadcasting 0 to all elements of the parameter array
+        p .= eps  # Broadcasting 0 to all elements of the parameter array
     end
 end
 
@@ -306,6 +310,15 @@ function checkLayersSizes(inputNN::NNparams, outputNN::NNparams)
     end
 end
 
+function readGeneralParams(filename="input.toml")
+    settings = TOML.parsefile(filename)
+    input_settings = settings["general"]
+
+    general_nn_params = GeneralParams(input_settings["set_zero_as"])
+
+    return general_nn_params
+end
+
 function main()
     if length(ARGS) == 0
         input_file_name = "input.toml"
@@ -323,7 +336,8 @@ function main()
     checkLayersSizes(inputNN, outputNN)
 
     output_model = initOutputModel(outputNN)
-    setParamsToZero!(output_model)
+    general_params = readGeneralParams(input_file_name)
+    setParamsToZero!(output_model, general_params.set_zero_as)
     output_model = copyNNWeigths(input_model, output_model, inputNN)
 
     if length(inputNN.activations) < length(outputNN.activations)
