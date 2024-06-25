@@ -227,6 +227,69 @@ function plot_model_parameters(model)
 end
 
 
+function plot_model_weight_differences(model1, model2)
+    for (layer1, layer2) in zip(model1, model2)
+        # Check if the layer has parameters (weights and biases)
+        if hasmethod(Flux.params, Tuple{typeof(layer1)}) && hasmethod(Flux.params, Tuple{typeof(layer2)})
+            params1 = Flux.params(layer1)
+            params2 = Flux.params(layer2)
+
+            for (p1, p2) in zip(params1, params2)
+                # Ensure both parameters are arrays
+                p1 = Array(p1)
+                p2 = Array(p2)
+
+                # Pad the smaller parameter with zeros to match the size of the larger one
+                if size(p1) != size(p2)
+                    if size(p1, 1) > size(p2, 1) || size(p1, 2) > size(p2, 2)
+                        p2 = padarray(p2, size(p1) .- size(p2), Val(:right))
+                    elseif size(p2, 1) > size(p1, 1) || size(p2, 2) > size(p1, 2)
+                        p1 = padarray(p1, size(p2) .- size(p1), Val(:right))
+                    end
+                end
+
+                # Compute the difference between the parameters
+                param_diff = p1 .- p2
+
+                # Define a custom color gradient with white at 0
+                color_gradient = cgrad([:blue, :white, :red], [0.0, 0.5, 1.0], rev=false)
+
+                # Assuming the parameter is a 2D array (for weights)
+                if ndims(param_diff) == 2
+                    x_ticks = 1:size(param_diff, 2)
+                    y_ticks = 1:size(param_diff, 1)
+                    diff_plot = heatmap(
+                        Array(param_diff),
+                        title="Weights Difference",
+                        xticks=(x_ticks, string.(x_ticks)),
+                        yticks=(y_ticks, string.(y_ticks)),
+                        c=color_gradient
+                    )
+                    display(diff_plot)
+                    # For biases or any 1D parameter, we convert them into a 2D array for the heatmap
+                elseif ndims(param_diff) == 1
+                    x_ticks = 1:length(param_diff)
+                    diff_plot = heatmap(
+                        reshape(Array(param_diff), 1, length(param_diff)),
+                        title="Biases Difference",
+                        xticks=(x_ticks, string.(x_ticks)),
+                        yticks=(1, "1"),
+                        c=color_gradient
+                    )
+                    display(diff_plot)
+                end
+            end
+        end
+    end
+end
+
+# Helper function to pad arrays with zeros
+function padarray(A, padsize, val)
+    padded_array = zeros(eltype(A), size(A) .+ padsize)
+    padded_array[1:size(A, 1), 1:size(A, 2)] .= A
+    return padded_array
+end
+
 
 function setLastLayerOnes(output_model)
     copy_matrix_into!(output_model[end].weight, ones(size(output_model[end].weight)), 1, 1)

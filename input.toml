@@ -3,15 +3,15 @@
 # output.structure -- structure of your neural network AFTER extending
 
 [input]
-file_name = "model-iter-09.bson"
-structure = [11, 30, 20, 20, 1]
+file_name = "add9-best.bson"
+structure = [20, 30, 20, 20, 1]
 activations = ["identity", "relu", "relu", "identity"]
 bias = true
 f64 = true
 
 [output]
-file_name ="water-add-three-g2.bson"
-structure = [14, 30, 20, 20, 1]
+file_name ="add9-plus-g3.bson"
+structure = [21, 35, 25, 25, 1]
 activations = ["identity", "relu", "relu", "identity"]
 bias = true
 f64 = true
