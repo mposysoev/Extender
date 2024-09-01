@@ -1,4 +1,4 @@
-# NN_Extender
+# Extender
 
 NN_Extender is a specialized tool designed to augment neural network models by adding additional neurons without altering the network's output. By appending zeros as weights and biases for new neurons, NN_Extender ensures seamless scalability of neural network models.
 

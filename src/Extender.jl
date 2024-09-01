@@ -4,23 +4,32 @@ using TOML
 using BSON: @save, @load
 using Flux
 using Plots
+using Statistics
+
+export run_extending, read_input_file, read_general_params, NeuralNetParams, GeneralParams,
+       load_model, save_model
 
 struct NeuralNetParams
     file_name::String
     structure::Vector{Int64}
     activations::Vector{String}
     use_bias::Bool
-    f64::Bool
+    precision::String
 end
 
 struct GeneralParams
-    set_zero_as::Float64
+    set_weigths_to::Float64
+    test_samples::Int64
 end
 
-function load_model(file_path::String)
+function load_model(file_path::String)::Flux.Chain
     model = nothing
     @load file_path model
     return model
+end
+
+function save_model(file_path::String, model::Flux.Chain)
+    @save file_path model
 end
 
 function read_input_file(filename::String = "input.toml")
@@ -32,15 +41,15 @@ function read_input_file(filename::String = "input.toml")
         input_settings["file_name"],
         input_settings["structure"],
         input_settings["activations"],
-        input_settings["bias"],
-        input_settings["f64"]
+        input_settings["use_bias"],
+        input_settings["precision"]
     )
     output_nn_params = NeuralNetParams(
         output_settings["file_name"],
         output_settings["structure"],
         output_settings["activations"],
-        output_settings["bias"],
-        output_settings["f64"]
+        output_settings["use_bias"],
+        output_settings["precision"]
     )
 
     return input_nn_params, output_nn_params
@@ -57,10 +66,12 @@ function get_nn_structure_vector(model::Flux.Chain)
     return structure
 end
 
-function set_params_to_zero!(model::Flux.Chain, eps::Real)
+function set_all_weigths_to_value(model::Flux.Chain, eps::Real)::Flux.Chain
     for p in Flux.params(model)
-        p .= eps  # Broadcasting 0 to all elements of the parameter array
+        p .= eps
     end
+
+    return model
 end
 
 function check_structures(input::NeuralNetParams, output::NeuralNetParams)
@@ -102,50 +113,54 @@ end
 
 function hello_message(input::NeuralNetParams, output::NeuralNetParams)
     println("""
-///////////////////////////////////////////////////////////////////////////////
-                                Extender
-///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////
+                      Extender
+///////////////////////////////////////////////////////////
     """)
     println("Neural Network would be changed from:")
     println("File: $(input.file_name)")
     println("Activations: $(input.activations)")
     println("Structure: $(input.structure)")
-    println("Bias: $(input.use_bias)")
-    println("Float64: $(input.f64)")
+    println("Use bias: $(input.use_bias)")
+    println("Precision: $(input.precision)")
     println("To:")
     println("Saved to file: $(output.file_name)")
     println("Activations: $(output.activations)")
     println("Structure: $(output.structure)")
-    println("Bias: $(output.use_bias)")
-    println("Float64: $(output.f64)")
+    println("Use bias: $(output.use_bias)")
+    println("Precision: $(output.precision)")
 end
 
-function check_math_model_and_input(inputNN::NeuralNetParams, input_file_name, input_model)
+function validate_input_structure(input_nn_params::NeuralNetParams, input_model::Flux.Chain)
     input_structure = get_nn_structure_vector(input_model)
-    if inputNN.structure != input_structure
-        println("WARNING:")
-        println("Something wrong with structures.")
-        println("Structure the actual model $(inputNN.file_name) -> $(input_structure)")
-        println("Doesn't match with structure $(inputNN.structure) from $(input_file_name)")
+    if input_nn_params.structure != input_structure
+        println("[ ERROR:")
+        println("    Something wrong with structures.")
+        println("    Structure of the model from file $(input_nn_params.file_name) -> $(input_structure)")
+        println("    Doesn't match with the structure $(input_nn_params.structure) from $(input_nn_params.file_name)")
         error("Abort!")
     end
 end
 
-function init_output_model(outputNN::NeuralNetParams)
-    structure = outputNN.structure
-    activations = outputNN.activations
+function init_output_model(output_nn_params::NeuralNetParams)
+    structure = output_nn_params.structure
+    activations = output_nn_params.activations
 
     layers = []
     for i in 1:length(activations)
         push!(layers,
             Dense(structure[i], structure[i + 1],
-                getfield(Main, Symbol(activations[i])), bias = outputNN.use_bias))
+                getfield(Main, Symbol(activations[i])), bias = output_nn_params.use_bias))
     end
 
     model = Chain(layers...)
 
-    if outputNN.f64
-        model = fmap(f64, model)
+    if output_nn_params.precision == "f64"
+        model = f64(model)
+    elseif output_nn_params.precision == "f32"
+        model = f32(model)
+    elseif output_nn_params.precision == "f16"
+        model = f16(model)
     end
 
     return model
@@ -168,10 +183,11 @@ function copy_matrix_into!(dest, src, start_row::Int, start_col::Int)
     end
 end
 
-function copy_nn_weigths(input_model::Flux.Chain, output_model::Flux.Chain, inputNN)
+function copy_nn_weigths(
+        input_model::Flux.Chain, output_model::Flux.Chain, input_nn_params::NeuralNetParams)
     for (id, layer) in enumerate(input_model)
         copy_matrix_into!(output_model[id].weight, layer.weight, 1, 1)
-        if inputNN.bias
+        if input_nn_params.use_bias
             copy_matrix_into!(output_model[id].bias, layer.bias, 1, 1)
         end
     end
@@ -289,62 +305,73 @@ function set_last_layer_ones(output_model::Flux.Chain)
     return output_model
 end
 
-function test(input_model::Flux.Chain, output_model::Flux.Chain, inputParams::NeuralNetParams,
-        outputParams::NeuralNetParams)
+function run_test(
+        input_model::Flux.Chain, output_model::Flux.Chain, input_nn_params::NeuralNetParams,
+        output_nn_params::NeuralNetParams, general_params::GeneralParams)
     mul = 1
-    n1 = inputParams.structure[1]
-    n2 = outputParams.structure[1]
+    n1 = input_nn_params.structure[1]
+    n2 = output_nn_params.structure[1]
 
-    for i in 1:1000
+    differences_vector = zeros(general_params.test_samples)
+
+    for i in 1:(general_params.test_samples)
         input_vector1 = rand(n1) .* mul
         v_2 = rand(n2 - n1) .* mul
         input_vector2 = vcat(input_vector1, v_2)
         result1 = input_model(input_vector1)
         result2 = output_model(input_vector2)
-        if abs(result1[1] - result2[1]) > 0.00001
-            println("❌ Failed test!")
-            println("Input model result: $(result1[1])")
-            println("Output model result: $(result2[1])")
-            println("Difference: $(abs(result1[1] - result2[1]))")
-        end
+
+        difference = abs(result1[1] - result2[1]) / abs(result1[1])
+        differences_vector[i] = difference
         mul *= -1
     end
+
+    mean_diff = mean(differences_vector) * 100
+    std_diff = std(differences_vector) * 100
+
+    println()
+    println("===========================================================")
+    println("Results of comparison models")
+    println("Mean relative difference: $(mean_diff)% ± $(std_diff)%")
+    println("===========================================================")
+    println()
 end
 
-function check_layers_sizes(inputNN::NeuralNetParams, outputNN::NeuralNetParams)
-    if length(inputNN.structure) > length(outputNN.structure)
+function validate_structures_and_activations(
+        input_nn_params::NeuralNetParams, output_nn_params::NeuralNetParams)
+    if length(input_nn_params.structure) > length(output_nn_params.structure)
         println("Number of layers in input NN couldn't be bigger that in output")
         error("Check amount of layers")
     end
 
-    if length(inputNN.activations) > length(outputNN.activations)
+    if length(input_nn_params.activations) > length(output_nn_params.activations)
         println("Number of layers in input NN couldn't be bigger that in output")
         error("Check amount of layers")
     end
 
-    if (length(inputNN.activations) + 1) != length(inputNN.structure)
-        println("$(length(inputNN.activations)) + 1 != $(length(inputNN.structure))")
+    if (length(input_nn_params.activations) + 1) != length(input_nn_params.structure)
+        println("$(length(input_nn_params.activations)) + 1 != $(length(input_nn_params.structure))")
         error("The length of input arrays for structure and activations doesn't match")
     end
 
-    if (length(outputNN.activations) + 1) != length(outputNN.structure)
-        println("$(length(outputNN.activations)) + 1 != $(length(outputNN.structure))")
+    if (length(output_nn_params.activations) + 1) != length(output_nn_params.structure)
+        println("$(length(output_nn_params.activations)) + 1 != $(length(output_nn_params.structure))")
         error("The length of output arrays for structure and activations doesn't match")
     end
 
-    for i in 1:length(inputNN.structure)
-        if inputNN.structure[i] > outputNN.structure[i]
+    for i in 1:length(input_nn_params.structure)
+        if input_nn_params.structure[i] > output_nn_params.structure[i]
             println(
-                "input: $(inputNN.structure[i]) > output: $(outputNN.structure[i]) in layer number $i.",
+                "input: $(input_nn_params.structure[i]) > output: $(output_nn_params.structure[i]) in layer number $i.",
             )
             error("Layers in new neural net should be bigger or the same at least")
         end
     end
 
-    for i in 1:(length(inputNN.structure) - 1)
-        if outputNN.activations[i] != inputNN.activations[i]
+    for i in 1:(length(input_nn_params.structure) - 1)
+        if output_nn_params.activations[i] != input_nn_params.activations[i]
             println(
-                "$(inputNN.activations[i]) != $(outputNN.activations[i]) in layer number $i",
+                "$(input_nn_params.activations[i]) != $(output_nn_params.activations[i]) in layer number $i",
             )
             error(
                 "Activation functions should be the same for corresponding layers for compatibility",
@@ -352,17 +379,17 @@ function check_layers_sizes(inputNN::NeuralNetParams, outputNN::NeuralNetParams)
         end
     end
 
-    for i in (length(inputNN.structure) - 1):(length(outputNN.structure) - 1)
-        if outputNN.activations[i] != "identity"
-            println("$(outputNN.activations[i]) should be identity")
+    for i in (length(input_nn_params.structure) - 1):(length(output_nn_params.structure) - 1)
+        if output_nn_params.activations[i] != "identity"
+            println("$(output_nn_params.activations[i]) should be identity")
             error(
                 "All additional layers should have IDENTITY activation function for compatibility",
             )
         end
     end
 
-    if inputNN.structure[end] != outputNN.structure[end]
-        println("WARNING: the sizes of the last layer should be the same. (or not)")
+    if input_nn_params.structure[end] != output_nn_params.structure[end]
+        println("WARNING: the sizes of the last layer should be the same.")
     end
 end
 
@@ -370,46 +397,52 @@ function read_general_params(filename::String = "input.toml")::GeneralParams
     settings = TOML.parsefile(filename)
     input_settings = settings["general"]
 
-    general_nn_params = GeneralParams(input_settings["set_zero_as"])
+    general_nn_params = GeneralParams(input_settings["set_weigths_to"], input_settings["test_samples"])
 
     return general_nn_params
 end
 
-function main()
-    if length(ARGS) == 0
-        input_file_name = "input.toml"
-    else
-        input_file_name = ARGS[1]
-    end
-
-    inputNN, outputNN = read_input_file(input_file_name)
-    input_model = load_model(inputNN)
-
-    check_math_model_and_input(inputNN, input_file_name, input_model)
-    hello_message(inputNN, outputNN)
-
-    check_layers_sizes(inputNN, outputNN)
-
-    output_model = init_output_model(outputNN)
-    general_params = read_general_params(input_file_name)
-    set_params_to_zero!(output_model, general_params.set_zero_as)
-    output_model = copy_nn_weigths(input_model, output_model, inputNN)
-
-    if length(inputNN.activations) < length(outputNN.activations)
-        last_n = inputNN.structure[end]
-        println("Adding additional layers")
-        for i in (length(inputNN.activations) + 1):length(outputNN.activations)
+function init_additional_layers(output_model::Flux.Chain, input_nn_params::NeuralNetParams,
+        output_nn_params::NeuralNetParams, eps::Real)::Flux.Chain
+    if length(input_nn_params.activations) < length(output_nn_params.activations)
+        last_n = input_nn_params.structure[end]
+        for i in (length(input_nn_params.activations) + 1):length(output_nn_params.activations)
             sizes = size(output_model[i].weight)
             ones_for_last_layer = ones(sizes)
-            ones_for_last_layer[(last_n + 1):end] .= 0
+            ones_for_last_layer[(last_n + 1):end] .= eps
             copy_matrix_into!(output_model[i].weight, ones_for_last_layer, 1, 1)
         end
     end
 
-    test(input_model, output_model, inputNN, outputNN)
+    return output_model
+end
 
-    model = nothing
-    model = output_model
-    @save outputNN.file_name model
+function validate(input_model::Flux.Chain, input_nn_params::NeuralNetParams,
+        output_nn_params::NeuralNetParams)
+    validate_input_structure(input_nn_params, input_model)
+    validate_structures_and_activations(input_nn_params, output_nn_params)
+end
+
+function extend(input_model::Flux.Chain, input_nn_params::NeuralNetParams,
+        output_nn_params::NeuralNetParams, general_params::GeneralParams)
+    output_model = init_output_model(output_nn_params)
+    output_model = set_all_weigths_to_value(output_model, general_params.set_weigths_to)
+    output_model = copy_nn_weigths(input_model, output_model, input_nn_params)
+    output_model = init_additional_layers(
+        output_model, input_nn_params, output_nn_params, general_params.set_weigths_to)
+
+    return output_model
+end
+
+function run_extending(input_model::Flux.Chain, input_nn_params::NeuralNetParams,
+        output_nn_params::NeuralNetParams, general_params::GeneralParams)::Flux.Chain
+    hello_message(input_nn_params, output_nn_params)
+
+    validate(input_model, input_nn_params, output_nn_params)
+    output_model = extend(input_model, input_nn_params, output_nn_params, general_params)
+
+    run_test(input_model, output_model, input_nn_params, output_nn_params, general_params)
+
+    return output_model
 end
 end # module Extender
