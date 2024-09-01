@@ -1,4 +1,7 @@
 dev.ipynb
 *.bson
 renamer.ipynb
-!model-iter-101.bson
+!methanol-example-model.bson
+
+.vscode
+Manifest.toml

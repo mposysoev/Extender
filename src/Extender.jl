@@ -1,16 +1,15 @@
-module NN_Extender
+module Extender
 
 using TOML
-using BSON
 using BSON: @save, @load
 using Flux
 using Plots
 
-struct NNparams
+struct NeuralNetParams
     file_name::String
     structure::Vector{Int64}
     activations::Vector{String}
-    bias::Bool
+    use_bias::Bool
     f64::Bool
 end
 
@@ -18,35 +17,36 @@ struct GeneralParams
     set_zero_as::Float64
 end
 
-function readModel(inputNN::NNparams)
-    @load inputNN.file_name model
+function load_model(file_path::String)
+    model = nothing
+    @load file_path model
     return model
 end
 
-function readInputFile(filename="input.toml")
+function read_input_file(filename::String = "input.toml")
     settings = TOML.parsefile(filename)
     input_settings = settings["input"]
     output_settings = settings["output"]
 
-    input_nn_params = NNparams(
+    input_nn_params = NeuralNetParams(
         input_settings["file_name"],
         input_settings["structure"],
         input_settings["activations"],
         input_settings["bias"],
-        input_settings["f64"],
+        input_settings["f64"]
     )
-    output_nn_params = NNparams(
+    output_nn_params = NeuralNetParams(
         output_settings["file_name"],
         output_settings["structure"],
         output_settings["activations"],
         output_settings["bias"],
-        output_settings["f64"],
+        output_settings["f64"]
     )
 
     return input_nn_params, output_nn_params
 end
 
-function getNNStructureVec(model)
+function get_nn_structure_vector(model::Flux.Chain)
     structure = []
     for layer in model.layers
         push!(structure, size(layer.weight)[2])
@@ -57,13 +57,13 @@ function getNNStructureVec(model)
     return structure
 end
 
-function setParamsToZero!(model, eps)
+function set_params_to_zero!(model::Flux.Chain, eps::Real)
     for p in Flux.params(model)
         p .= eps  # Broadcasting 0 to all elements of the parameter array
     end
 end
 
-function checkStructures(input::NNparams, output::NNparams)
+function check_structures(input::NeuralNetParams, output::NeuralNetParams)
     l1 = length(input.activations)
     l2 = length(output.activations)
     l3 = length(input.structure)
@@ -100,7 +100,7 @@ function checkStructures(input::NNparams, output::NNparams)
     end
 end
 
-function helloMessage(input::NNparams, output::NNparams)
+function hello_message(input::NeuralNetParams, output::NeuralNetParams)
     println("""
 ///////////////////////////////////////////////////////////////////////////////
                                 Extender
@@ -110,18 +110,18 @@ function helloMessage(input::NNparams, output::NNparams)
     println("File: $(input.file_name)")
     println("Activations: $(input.activations)")
     println("Structure: $(input.structure)")
-    println("Bias: $(input.bias)")
+    println("Bias: $(input.use_bias)")
     println("Float64: $(input.f64)")
     println("To:")
     println("Saved to file: $(output.file_name)")
     println("Activations: $(output.activations)")
     println("Structure: $(output.structure)")
-    println("Bias: $(output.bias)")
+    println("Bias: $(output.use_bias)")
     println("Float64: $(output.f64)")
 end
 
-function checkMathModelAndInput(inputNN::NNparams, input_file_name, input_model)
-    input_structure = getNNStructureVec(input_model)
+function check_math_model_and_input(inputNN::NeuralNetParams, input_file_name, input_model)
+    input_structure = get_nn_structure_vector(input_model)
     if inputNN.structure != input_structure
         println("WARNING:")
         println("Something wrong with structures.")
@@ -131,21 +131,15 @@ function checkMathModelAndInput(inputNN::NNparams, input_file_name, input_model)
     end
 end
 
-function initOutputModel(outputNN::NNparams)
+function init_output_model(outputNN::NeuralNetParams)
     structure = outputNN.structure
     activations = outputNN.activations
 
     layers = []
-    for i = 1:length(activations)
-        push!(
-            layers,
-            Dense(
-                structure[i],
-                structure[i+1],
-                getfield(Main, Symbol(activations[i])),
-                bias=outputNN.bias,
-            ),
-        )
+    for i in 1:length(activations)
+        push!(layers,
+            Dense(structure[i], structure[i + 1],
+                getfield(Main, Symbol(activations[i])), bias = outputNN.use_bias))
     end
 
     model = Chain(layers...)
@@ -167,14 +161,14 @@ function copy_matrix_into!(dest, src, start_row::Int, start_col::Int)
     end
 
     # Copy values from source to destination
-    for i = 1:size(src, 1)
-        for j = 1:size(src, 2)
-            dest[start_row+i-1, start_col+j-1] = src[i, j]
+    for i in 1:size(src, 1)
+        for j in 1:size(src, 2)
+            dest[start_row + i - 1, start_col + j - 1] = src[i, j]
         end
     end
 end
 
-function copyNNWeigths(input_model, output_model, inputNN)
+function copy_nn_weigths(input_model::Flux.Chain, output_model::Flux.Chain, inputNN)
     for (id, layer) in enumerate(input_model)
         copy_matrix_into!(output_model[id].weight, layer.weight, 1, 1)
         if inputNN.bias
@@ -192,7 +186,7 @@ function plot_model_parameters(model)
             layer_params = Flux.params(layer)
             for p in layer_params
                 # Define a custom color gradient with white at 0
-                color_gradient = cgrad([:blue, :white, :red], [0.0, 0.5, 1.0], rev=false)
+                color_gradient = cgrad([:blue, :white, :red], [0.0, 0.5, 1.0], rev = false)
                 # Set color limits to ensure 0 is always white
                 color_limits = (-1.0, 1.0)
                 # Assuming the parameter is a 2D array (for weights)
@@ -201,11 +195,11 @@ function plot_model_parameters(model)
                     y_ticks = 1:size(p, 1)
                     p_plot = heatmap(
                         Array(p),
-                        title="Weights",
-                        xticks=(x_ticks, string.(x_ticks)),
-                        yticks=(y_ticks, string.(y_ticks)),
-                        c=color_gradient,
-                        clims=color_limits
+                        title = "Weights",
+                        xticks = (x_ticks, string.(x_ticks)),
+                        yticks = (y_ticks, string.(y_ticks)),
+                        c = color_gradient,
+                        clims = color_limits
                     )
                     display(p_plot)
                     # For biases or any 1D parameter, we convert them into a 2D array for the heatmap
@@ -213,11 +207,11 @@ function plot_model_parameters(model)
                     x_ticks = 1:length(p)
                     p_plot = heatmap(
                         reshape(Array(p), 1, length(p)),
-                        title="Biases",
-                        xticks=(x_ticks, string.(x_ticks)),
-                        yticks=(1, "1"),
-                        c=color_gradient,
-                        clims=color_limits
+                        title = "Biases",
+                        xticks = (x_ticks, string.(x_ticks)),
+                        yticks = (1, "1"),
+                        c = color_gradient,
+                        clims = color_limits
                     )
                     display(p_plot)
                 end
@@ -226,11 +220,11 @@ function plot_model_parameters(model)
     end
 end
 
-
 function plot_model_weight_differences(model1, model2)
     for (layer1, layer2) in zip(model1, model2)
         # Check if the layer has parameters (weights and biases)
-        if hasmethod(Flux.params, Tuple{typeof(layer1)}) && hasmethod(Flux.params, Tuple{typeof(layer2)})
+        if hasmethod(Flux.params, Tuple{typeof(layer1)}) &&
+           hasmethod(Flux.params, Tuple{typeof(layer2)})
             params1 = Flux.params(layer1)
             params2 = Flux.params(layer2)
 
@@ -252,7 +246,7 @@ function plot_model_weight_differences(model1, model2)
                 param_diff = p1 .- p2
 
                 # Define a custom color gradient with white at 0
-                color_gradient = cgrad([:blue, :white, :red], [0.0, 0.5, 1.0], rev=false)
+                color_gradient = cgrad([:blue, :white, :red], [0.0, 0.5, 1.0], rev = false)
 
                 # Assuming the parameter is a 2D array (for weights)
                 if ndims(param_diff) == 2
@@ -260,10 +254,10 @@ function plot_model_weight_differences(model1, model2)
                     y_ticks = 1:size(param_diff, 1)
                     diff_plot = heatmap(
                         Array(param_diff),
-                        title="Weights Difference",
-                        xticks=(x_ticks, string.(x_ticks)),
-                        yticks=(y_ticks, string.(y_ticks)),
-                        c=color_gradient
+                        title = "Weights Difference",
+                        xticks = (x_ticks, string.(x_ticks)),
+                        yticks = (y_ticks, string.(y_ticks)),
+                        c = color_gradient
                     )
                     display(diff_plot)
                     # For biases or any 1D parameter, we convert them into a 2D array for the heatmap
@@ -271,10 +265,10 @@ function plot_model_weight_differences(model1, model2)
                     x_ticks = 1:length(param_diff)
                     diff_plot = heatmap(
                         reshape(Array(param_diff), 1, length(param_diff)),
-                        title="Biases Difference",
-                        xticks=(x_ticks, string.(x_ticks)),
-                        yticks=(1, "1"),
-                        c=color_gradient
+                        title = "Biases Difference",
+                        xticks = (x_ticks, string.(x_ticks)),
+                        yticks = (1, "1"),
+                        c = color_gradient
                     )
                     display(diff_plot)
                 end
@@ -290,18 +284,18 @@ function padarray(A, padsize, val)
     return padded_array
 end
 
-
-function setLastLayerOnes(output_model)
+function set_last_layer_ones(output_model::Flux.Chain)
     copy_matrix_into!(output_model[end].weight, ones(size(output_model[end].weight)), 1, 1)
     return output_model
 end
 
-function test(input_model, output_model, inputParams::NNparams, outputParams::NNparams)
+function test(input_model::Flux.Chain, output_model::Flux.Chain, inputParams::NeuralNetParams,
+        outputParams::NeuralNetParams)
     mul = 1
     n1 = inputParams.structure[1]
     n2 = outputParams.structure[1]
 
-    for i = 1:1000
+    for i in 1:1000
         input_vector1 = rand(n1) .* mul
         v_2 = rand(n2 - n1) .* mul
         input_vector2 = vcat(input_vector1, v_2)
@@ -317,7 +311,7 @@ function test(input_model, output_model, inputParams::NNparams, outputParams::NN
     end
 end
 
-function checkLayersSizes(inputNN::NNparams, outputNN::NNparams)
+function check_layers_sizes(inputNN::NeuralNetParams, outputNN::NeuralNetParams)
     if length(inputNN.structure) > length(outputNN.structure)
         println("Number of layers in input NN couldn't be bigger that in output")
         error("Check amount of layers")
@@ -338,8 +332,7 @@ function checkLayersSizes(inputNN::NNparams, outputNN::NNparams)
         error("The length of output arrays for structure and activations doesn't match")
     end
 
-
-    for i = 1:length(inputNN.structure)
+    for i in 1:length(inputNN.structure)
         if inputNN.structure[i] > outputNN.structure[i]
             println(
                 "input: $(inputNN.structure[i]) > output: $(outputNN.structure[i]) in layer number $i.",
@@ -348,7 +341,7 @@ function checkLayersSizes(inputNN::NNparams, outputNN::NNparams)
         end
     end
 
-    for i = 1:(length(inputNN.structure)-1)
+    for i in 1:(length(inputNN.structure) - 1)
         if outputNN.activations[i] != inputNN.activations[i]
             println(
                 "$(inputNN.activations[i]) != $(outputNN.activations[i]) in layer number $i",
@@ -359,7 +352,7 @@ function checkLayersSizes(inputNN::NNparams, outputNN::NNparams)
         end
     end
 
-    for i = (length(inputNN.structure)-1):(length(outputNN.structure)-1)
+    for i in (length(inputNN.structure) - 1):(length(outputNN.structure) - 1)
         if outputNN.activations[i] != "identity"
             println("$(outputNN.activations[i]) should be identity")
             error(
@@ -373,7 +366,7 @@ function checkLayersSizes(inputNN::NNparams, outputNN::NNparams)
     end
 end
 
-function readGeneralParams(filename="input.toml")
+function read_general_params(filename::String = "input.toml")::GeneralParams
     settings = TOML.parsefile(filename)
     input_settings = settings["general"]
 
@@ -389,27 +382,26 @@ function main()
         input_file_name = ARGS[1]
     end
 
+    inputNN, outputNN = read_input_file(input_file_name)
+    input_model = load_model(inputNN)
 
-    inputNN, outputNN = readInputFile(input_file_name)
-    input_model = readModel(inputNN)
+    check_math_model_and_input(inputNN, input_file_name, input_model)
+    hello_message(inputNN, outputNN)
 
-    checkMathModelAndInput(inputNN, input_file_name, input_model)
-    helloMessage(inputNN, outputNN)
+    check_layers_sizes(inputNN, outputNN)
 
-    checkLayersSizes(inputNN, outputNN)
-
-    output_model = initOutputModel(outputNN)
-    general_params = readGeneralParams(input_file_name)
-    setParamsToZero!(output_model, general_params.set_zero_as)
-    output_model = copyNNWeigths(input_model, output_model, inputNN)
+    output_model = init_output_model(outputNN)
+    general_params = read_general_params(input_file_name)
+    set_params_to_zero!(output_model, general_params.set_zero_as)
+    output_model = copy_nn_weigths(input_model, output_model, inputNN)
 
     if length(inputNN.activations) < length(outputNN.activations)
         last_n = inputNN.structure[end]
         println("Adding additional layers")
-        for i = (length(inputNN.activations)+1):length(outputNN.activations)
+        for i in (length(inputNN.activations) + 1):length(outputNN.activations)
             sizes = size(output_model[i].weight)
             ones_for_last_layer = ones(sizes)
-            ones_for_last_layer[(last_n+1):end] .= 0
+            ones_for_last_layer[(last_n + 1):end] .= 0
             copy_matrix_into!(output_model[i].weight, ones_for_last_layer, 1, 1)
         end
     end
@@ -420,4 +412,4 @@ function main()
     model = output_model
     @save outputNN.file_name model
 end
-end # module NN_Extender
+end # module Extender
