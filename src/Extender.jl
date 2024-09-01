@@ -215,7 +215,9 @@ function plot_model_parameters(model)
                         xticks = (x_ticks, string.(x_ticks)),
                         yticks = (y_ticks, string.(y_ticks)),
                         c = color_gradient,
-                        clims = color_limits
+                        clims = color_limits,
+                        aspect_ratio = 1,
+                        size = (800, 800)
                     )
                     display(p_plot)
                     # For biases or any 1D parameter, we convert them into a 2D array for the heatmap
@@ -227,7 +229,9 @@ function plot_model_parameters(model)
                         xticks = (x_ticks, string.(x_ticks)),
                         yticks = (1, "1"),
                         c = color_gradient,
-                        clims = color_limits
+                        clims = color_limits,
+                        aspect_ratio = 1,
+                        size = (800, 800)
                     )
                     display(p_plot)
                 end
@@ -397,7 +401,8 @@ function read_general_params(filename::String = "input.toml")::GeneralParams
     settings = TOML.parsefile(filename)
     input_settings = settings["general"]
 
-    general_nn_params = GeneralParams(input_settings["set_weigths_to"], input_settings["test_samples"])
+    general_nn_params = GeneralParams(
+        input_settings["set_weigths_to"], input_settings["test_samples"])
 
     return general_nn_params
 end

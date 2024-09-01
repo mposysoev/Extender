@@ -15,7 +15,8 @@ function main()
     general_params = read_general_params(input_file_name)
 
     input_model = load_model(input_nn_params.file_name)
-    output_model = run_extending(input_model, input_nn_params, output_nn_params, general_params)
+    output_model = run_extending(
+        input_model, input_nn_params, output_nn_params, general_params)
 
     model = nothing
     model = output_model
