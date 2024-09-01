@@ -1,6 +1,6 @@
 # Extender
 
-NN_Extender is a specialized tool designed to augment neural network models by adding additional neurons without altering the network's output. By appending zeros as weights and biases for new neurons, NN_Extender ensures seamless scalability of neural network models.
+Extender is a specialized tool designed to augment neural network models by adding additional neurons without altering the network's output. By appending zeros as weights and biases for new neurons, NN_Extender ensures seamless scalability of neural network models.
 
 <div style="display: flex;">
     <div style="text-align: center;">
@@ -13,10 +13,28 @@ NN_Extender is a specialized tool designed to augment neural network models by a
     </div>
 </div>
 
+## Installation
+
+Firstly, you need to install all dependencies required for this project. You can do it easily just run:
+
+```bash
+make install
+```
+
+This command creates file `Manifest.toml`. It means that you are ready to run this code.
+
 ## Usage
 
-Just run all cells in file run_me.ipynb
+There are two ways to run this code:
 
-## License
+1. From `Jupyter Notebook` (recommended). For this, you need to run all cells from `run_me.ipynb` file. It will do everything for `example-methanol-model.bson` file automatically.
+2. From the terminal. If you want to run this program as a command-line application:
+   - `julia --project=. main.jl`
+   - or `make run` to run the example
 
-NN_Extender is released under the GNU GPL 3 License. See the LICENSE file for more details.
+## Authors and License
+
+- Maksim Posysoev (<maxim.posysoev@gmail.com>)
+- Prof. Alexander Lyubartsev (<alexander.lyubartsev@mmk.su.se>)
+
+*GNU GPL-3.0 license*

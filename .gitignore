@@ -1,7 +1,6 @@
-dev.ipynb
+
 *.bson
-renamer.ipynb
-!methanol-example-model.bson
+!example-methanol-model.bson
 
 .vscode
 Manifest.toml
